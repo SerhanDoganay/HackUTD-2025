@@ -1,11 +1,19 @@
+import { CauldronProvider } from "./CauldronContext";
+import { TimelineProvider } from "./TimelineContext";
 import Cauldrons from './Cauldrons';
+import Market from './Market';
 import Timeline from './Timeline';
 
 function App() {
   return (
     <div>
-      <Timeline />
-      <Cauldrons />
+      <TimelineProvider>
+      <CauldronProvider>
+        <Timeline />
+        <Cauldrons />
+        <Market />
+      </CauldronProvider>
+      </TimelineProvider>
     </div>
   );
 }

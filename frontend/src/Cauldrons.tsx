@@ -1,85 +1,51 @@
 import { useEffect, useMemo, useState } from "react";
-
-interface CauldronInfo {
-    max_volume: number;
-    id: string;
-    name: string;
-    latitude: number;
-    longitude: number;
-}
-
-interface CauldronLevels {
-    cauldron_001: number;
-    cauldron_002: number;
-    cauldron_003: number;
-    cauldron_004: number;
-    cauldron_005: number;
-    cauldron_006: number;
-    cauldron_007: number;
-    cauldron_008: number;
-    cauldron_009: number;
-    cauldron_010: number;
-    cauldron_011: number;
-    cauldron_012: number;
-}
-
-interface CauldronInstant {
-    timestamp: string;
-    cauldron_levels: CauldronLevels;
-}
+import { useCauldrons, LEFTMOST, UPMOST } from "./CauldronContext";
+import { useTimeline } from "./TimelineContext";
 
 function Cauldron({ id }) {
-    console.log(id);
-    const percentFull = 0.5;
+    const { cauldrons, cauldronData, marketData, loading } = useCauldrons();
+    const { currentTime } = useTimeline();
+    
+    const formattedTime = currentTime?.toISOString().replace(/\.\d{3}Z$/, '+00:00');
+    const inst = cauldronData.find(c => c.timestamp == formattedTime);
+    const myStat = inst?.cauldron_levels[id as keyof CauldronLevels];
+
+    const myInfo = cauldrons.find(c => c.id == id);
+
+    const percentFull = myStat / myInfo?.max_volume;
+
+    const [visible, setVisible] = useState(false);
+
+    const scale = 200000;
+    const xOff = (myInfo?.longitude - LEFTMOST) * scale;
+    const yOff = (myInfo?.latitude - UPMOST) * scale;
+
+    const positionInfo = {
+        position: 'absolute',
+        left: `${xOff}px`,
+        top: `${yOff}px`
+    };
 
     return (
-        <img src={'/cauldron' + String(Math.ceil(percentFull * 100)).padStart(4, '0') + '.png'} width="100"></img>
+        <div style={positionInfo}>
+            <p>{myInfo?.name}</p>
+            <img 
+            onMouseEnter={() => setVisible(true)}
+            onMouseLeave={() => setVisible(false)}
+            src={'/cauldron' + String(Math.ceil(percentFull * 100)).padStart(4, '0') + '.png'} width="60"></img>
+
+            {visible && (
+                <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 
+                        px-2 py-1 bg-gray-800 text-white text-sm rounded shadow-md">
+                    {myStat} / {myInfo?.max_volume} liters ({String(Math.ceil(percentFull * 100))}% full)
+                </div>
+            )}
+        </div>
     );
 }
 
 function Cauldrons() {
-    const [cauldrons, setCauldrons] = useState<CauldronInfo[]>([]);
-    const [cauldronData, setCauldronData] = useState<CauldronInstant[]>([]);
-    const [loading, setLoading] = useState(true);
-
-    useEffect(() => {
-      const fetchCauldrons = async () => {
-        try {
-          const response = await fetch("/api/Information/cauldrons");
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          const data: CauldronInfo[] = await response.json();
-          setCauldrons(data);
-        } catch (error) {
-          console.error("Error fetching users:", error);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      fetchCauldrons();
-    }, []); 
-
-    useEffect(() => {
-      const fetchCauldronData = async () => {
-        try {
-          const response = await fetch("/api/Data");
-          if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-          }
-          const data: CauldronInstant[] = await response.json();
-          setCauldronData(data);
-        } catch (error) {
-          console.error("Error fetching users:", error);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      fetchCauldronData();
-    }, []); 
-
+    const { cauldrons, cauldronData, loading } = useCauldrons();
     const numCauldrons = cauldrons.length;
     var i = 0;
     return (
