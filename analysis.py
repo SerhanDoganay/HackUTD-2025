@@ -1,6 +1,13 @@
 import pandas as pd
 import numpy as np
 import api_loader
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
+import uvicorn
+from fastapi.middleware.cors import CORSMiddleware # or other middleware
+from pydantic import BaseModel
+import datetime
 
 def get_baseline_fill_rate(cauldron_data: pd.DataFrame) -> float:
     """
@@ -158,32 +165,34 @@ def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
 
     return flagged_tickets, unlogged_drains, reconciled_pairs
 
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+cauldron_df = api_loader.fetch_cauldron_levels()
+tickets_df = api_loader.fetch_tickets()
+cauldron_df = add_analysis_columns(cauldron_df)
+
 # --- MAIN SCRIPT (This runs when you execute the file) ---
 if __name__ == "__main__":
-    
-    print("Starting batch analysis...")
-    
-    # --- STEP 1: LOAD DATA ---
-    cauldron_df = api_loader.fetch_cauldron_levels()
-    tickets_df = api_loader.fetch_tickets()
+    uvicorn.run("analysis:app", host="127.0.0.1", port=8000, reload=True)
 
-    # --- ADD THIS DEBUG LINE ---
-    print("\n--- DEBUG: Ticket Amounts (Sorted) ---")
-    print(tickets_df['amount_collected'].sort_values().unique())
-    # --- END DEBUG ---
-    
-    # --- STEP 2: PREPARE DATA ---
-    cauldron_df = add_analysis_columns(cauldron_df)
-    
-    print("Data prepared. Analyzing specified days...")
-
+class QDayData(BaseModel):
+    days: list[str]
+@app.post("/query_days")
+def query_day(in_days: QDayData):
     # --- STEP 3: DEFINE THE DATES YOU WANT TO TEST ---
     #
     # THIS IS THE PART YOU CHANGE
     # Instead of finding unique dates, just define your list.
     # Use 'YYYY-MM-DD' format.
     #
-    dates_to_test = ["2025-10-30"]
+    dates_to_test = in_days.days
     
     # This list will hold our final report
     all_results = []
@@ -316,3 +325,16 @@ if __name__ == "__main__":
             for event in first_bad_day['unlogged_drains']:
                 print(f"  - Event: Cauldron {event['cauldron_id']}, Total Drain: {event['total_drain']:.2f}L, Start: {event['start_time']}")
             # --- END DEBUG BLOCK ---
+
+    def serialize_item(item):
+        if isinstance(item, pd.Timestamp):
+            return item.isoformat()
+        elif isinstance(item, list):
+            return [serialize_item(i) for i in item]
+        elif isinstance(item, dict):
+            return {k: serialize_item(v) for k, v in item.items()}
+        else:
+            return item
+
+    serializable_results = [serialize_item(day) for day in all_results]
+    return JSONResponse(content=jsonable_encoder(serializable_results))

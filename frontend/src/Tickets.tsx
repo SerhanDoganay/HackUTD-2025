@@ -32,40 +32,47 @@ interface WitchData {
   max_carrying_capacity: number;
 }
 
-interface DrainInfo {
-    cauldron_id: string;
-    actual_drain: number;
-    start_time: string;
-    total_drain: number;
+interface FlagData {
+  ticket_id: string;
+  cauldron_id: string;
+  amount_collected: number;
+  courier_id: string;
+  date: string;
 }
 
-interface FlaggedInfo {
-    ticket_id: string;
-    cauldron_id: string;
-    amount_collected: number;
-    courier_id: string;
-    date: string;
+interface DrainData {
+  cauldron_id: string;
+  start_time: string;
+  total_drain: number;
 }
 
-interface UnloggedInfo {
-    cauldron_id: string;
-    actual_drain: number;
-    start_time: string;
-    total_drain: number;
+interface TicketEntry {
+  ticket_id: string;
+  cauldron_id: string;
+  amount_collected: number;
+  courier_id: string;
+  date: string;
 }
 
-interface AnalysisEntry {
-    date: string;
-    total_discrepancy_L: number;
-    flagged_tickets_count: number;
-    unlogged_drains_count: number;
-    drain_events: DrainInfo[];
-    flagged_tickets: FlaggedInfo[];
-    unlogged_drains: UnloggedInfo[];
+interface EventEntry {
+  cauldron_id: string;
+  start_time: string;
+  total_drain: number;
 }
 
-interface AnalysisData {
-    results: AnalysisEntry[];
+interface PairData {
+  ticket: TicketEntry;
+  event: EventEntry;
+}
+
+interface ApiData {
+  date: string;
+  total_discrepancy_L: number;
+  flagged_tickets_count: number;
+  unlogged_drains_count: number;
+  flagged_tickets: FlagData[];
+  unlogged_drains: DrainData[];
+  reconciled_pairs: PairData[];
 }
 
 export default function Tickets() {
@@ -74,7 +81,7 @@ export default function Tickets() {
   const [ticketInfo, setTicketInfo] = useState<TicketsPackage | null>(null);
   const [witchInfo, setWitchInfo] = useState<WitchData[]>([]);
   const [ticketDates, setTicketDates] = useState<Date[]>([]);
-  const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
+  const [analysis, setAnalysis] = useState<ApiData[]>([]);
   const [myloading, setLoading] = useState(true);
   const [dateList, setDateList] = useState<string[]>([]);
 
@@ -117,7 +124,7 @@ export default function Tickets() {
 
         const ticketData = (await ticketRes.json()) as TicketsPackage;
         const witchData = (await witchRes.json()) as WitchData[];
-        const analysisData = (await analysisRes.json()) as AnalysisData;
+        const analysisData = (await analysisRes.json()) as ApiData[];
 
         setTicketInfo(ticketData);
         setWitchInfo(witchData);
@@ -151,9 +158,9 @@ export default function Tickets() {
         return (
             <div>
                 {isVisible && (
-                    <p key={t.ticket_id} style={{ color: analysis.results.find(d => d.flagged_tickets.find(q => q.ticket_id == t.ticket_id)) ? 'red' : 'black' }}>
-            {witchInfo.find(s => s.courier_id == t.courier_id)?.name} delivered {t.amount_collected} liters from {cauldrons.find(c => c.id == t.cauldron_id)?.name} on {t.date}
-          </p>
+                    <p key={t.ticket_id} style={{ color: analysis.find(d => d.flagged_tickets.find(q => q.ticket_id == t.ticket_id)) ? 'red' : 'black' }}>
+                      {witchInfo.find(s => s.courier_id == t.courier_id)?.name} delivered {t.amount_collected} liters from {cauldrons.find(c => c.id == t.cauldron_id)?.name} on {analysis.find(d => d.reconciled_pairs.find(p => p.ticket.ticket_id == t.ticket_id))?.reconciled_pairs.find(p => p.ticket.ticket_id == t.ticket_id)?.event.start_time} {t.date}
+                    </p>
                 )}
             </div>
           
