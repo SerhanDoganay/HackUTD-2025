@@ -50,42 +50,39 @@ def get_drain_events(df_today: pd.DataFrame):
     Finds only the "fast drain" events for ticket matching.
     """
     
-    # A "Fast Drain" is any minute the cauldron drops by more than 2.0L.
-    # This is a safe number, well above the 0.14 noise.
+    # A "Fast Drain" is any minute the cauldron level drops noticably
     FAST_DRAIN_THRESHOLD = -0.25
     
     df_today = df_today.sort_values(by=['cauldron_id', 'timestamp'])
     
-    # 1. Find all minutes that are part of a "fast drain"
+    # Find all minutes that are part of a "fast drain"
     is_draining = df_today['observed_delta'] < FAST_DRAIN_THRESHOLD
     
-    # 2. Create a 'group_id' for consecutive draining minutes
+    # Create a 'group_id' for consecutive draining minutes
     new_event_group = (is_draining != is_draining.shift()).cumsum()
     
-    # 3. Filter for only the draining minutes
+    # Filter for only the draining minutes
     draining_data = df_today[is_draining]
     
-    # 4. Group by cauldron AND the new event group
+    # Group by cauldron AND the new event group
     events_df = draining_data.groupby(['cauldron_id', new_event_group])
     
     drain_events_list = []
     
-    # 5. Loop through each event to calculate its true total drain
+    #Loop through each event to calculate its true total drain
     for (cauldron_id, group_id), event_data in events_df:
         
-        # Calculate the total potion *lost* (e.g., -298.5)
+        # Calculate the total potion lost
         total_delta_loss = event_data['observed_delta'].sum()
         
-        # Calculate the total potion *gained* from filling
-        # during that time (e.g., 3 minutes * 1.5L/min = 4.5L)
+        # Calculate the total potion gained from filling
+        # during that time 
         total_fill_gain = event_data['fill_rate'].sum()
         
-        # The true amount the witch took is the loss PLUS the gain
-        # e.g., total_drain = 4.5 - (-298.5) = 303.0L
+        # The true amount the witch took is the gain minus loss
         total_drain = total_fill_gain - total_delta_loss
         
-        # Your smallest ticket is 19.79L. We'll filter out
-        # any "fast" events that are still too small (i.e., noise spikes).
+        # Setting a minimum to filter out small fluctuations
         MINIMUM_TICKET_THRESHOLD = 15.0
         
         if total_drain > MINIMUM_TICKET_THRESHOLD:
@@ -100,7 +97,6 @@ def get_drain_events(df_today: pd.DataFrame):
 def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
     """
     Matches drain events to tickets using a "best-fit" algorithm.
-    This is more accurate than a simple "greedy" match.
     """
     
     flagged_tickets = []
@@ -110,7 +106,7 @@ def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
     events_to_match = list(drain_events_list)
     tickets_to_match = list(tickets_today_list)
     
-    # We can keep a 20% tolerance, but now we'll use it more intelligently
+    # We can keep a 5% tolerance between events and tickets for matching
     MATCH_TOLERANCE = 0.05
 
     # Loop through each DRAIN EVENT
@@ -120,7 +116,7 @@ def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
         smallest_diff_percent = float('inf') # Start with infinity
         ticket_index_to_remove = -1
 
-        # 1. FIND THE "BEST" MATCH
+        # Finding the best match
         # Loop through all available tickets to find the single best partner
         for i, ticket in enumerate(tickets_to_match):
             
@@ -140,18 +136,15 @@ def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
                     best_match_ticket = ticket
                     ticket_index_to_remove = i
 
-        # 2. VALIDATE THE "BEST" MATCH
-        # After checking all tickets, see if our best find is good enough
+        # Validating the best app
+        # After checking all tickets, see if our best find is correspondence
         if best_match_ticket is not None and smallest_diff_percent <= MATCH_TOLERANCE:
-            # It is! This is a confirmed, "best-fit" pair.
             reconciled_pairs.append({
                 "ticket": best_match_ticket,
                 "event": event
             })
             
             # Remove the ticket from the pool so it can't be used again
-            # We pop in reverse index order to not mess up the list
-            # (Safety check by popping the specific index)
             tickets_to_match.pop(ticket_index_to_remove)
         
         else:
@@ -159,7 +152,7 @@ def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
             # It is an "unlogged drain".
             unlogged_drains.append(event)
 
-    # 3. FINAL CLEANUP
+    # Marking remaining tickets as flagged
     # Any tickets left in the pool at the end are "ghost" tickets.
     flagged_tickets = tickets_to_match
 
@@ -178,7 +171,7 @@ cauldron_df = api_loader.fetch_cauldron_levels()
 tickets_df = api_loader.fetch_tickets()
 cauldron_df = add_analysis_columns(cauldron_df)
 
-# --- MAIN SCRIPT (This runs when you execute the file) ---
+# --- MAIN SCRIPT Testing (This runs when you execute the file) ---
 if __name__ == "__main__":
     uvicorn.run("analysis:app", host="127.0.0.1", port=8000, reload=True)
 
