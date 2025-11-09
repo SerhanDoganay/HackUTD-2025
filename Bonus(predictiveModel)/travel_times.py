@@ -90,7 +90,7 @@ def compute_travel_times(directed: bool = True) -> tuple[pd.DataFrame, pd.DataFr
     return matrix, cauldrons, market
 
 if __name__ == "__main__":
-    # --- Example usage ---
+  
     travel_matrix, cauldrons, market = compute_travel_times(directed=True)
 
     print("\nMarket node:", market.get("id"), "-", market.get("name"))
@@ -102,6 +102,4 @@ if __name__ == "__main__":
     head_nodes = travel_matrix.index[:8]
     print(travel_matrix.loc[head_nodes, head_nodes])
 
-    # If you prefer undirected (bidirectional travel assumed), run:
-    # travel_matrix_undirected, _, _ = compute_travel_times(directed=False)
 
