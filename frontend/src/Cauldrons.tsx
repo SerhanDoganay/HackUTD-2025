@@ -37,7 +37,7 @@ function Cauldron({ id }) {
 
             {visible && (
                 <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 
-                        px-2 py-1 bg-gray-800 text-white text-sm rounded shadow-md">
+                        px-2 py-1 bg-gray-800 text-white text-sm rounded shadow-md cpopup">
                     {myStat} / {myInfo?.max_volume} liters ({String(Math.ceil(percentFull * 100))}% full)
                 </div>
             )}

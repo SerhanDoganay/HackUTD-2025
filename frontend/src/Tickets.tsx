@@ -32,32 +32,96 @@ interface WitchData {
   max_carrying_capacity: number;
 }
 
+interface DrainInfo {
+    cauldron_id: string;
+    actual_drain: number;
+    start_time: string;
+    total_drain: number;
+}
+
+interface FlaggedInfo {
+    ticket_id: string;
+    cauldron_id: string;
+    amount_collected: number;
+    courier_id: string;
+    date: string;
+}
+
+interface UnloggedInfo {
+    cauldron_id: string;
+    actual_drain: number;
+    start_time: string;
+    total_drain: number;
+}
+
+interface AnalysisEntry {
+    date: string;
+    total_discrepancy_L: number;
+    flagged_tickets_count: number;
+    unlogged_drains_count: number;
+    drain_events: DrainInfo[];
+    flagged_tickets: FlaggedInfo[];
+    unlogged_drains: UnloggedInfo[];
+}
+
+interface AnalysisData {
+    results: AnalysisEntry[];
+}
+
 export default function Tickets() {
-  const { currentTime } = useTimeline();
+  const { meta, currentTime } = useTimeline();
   const { cauldrons, cauldronData, marketData, loading } = useCauldrons();
   const [ticketInfo, setTicketInfo] = useState<TicketsPackage | null>(null);
   const [witchInfo, setWitchInfo] = useState<WitchData[]>([]);
   const [ticketDates, setTicketDates] = useState<Date[]>([]);
+  const [analysis, setAnalysis] = useState<AnalysisData | null>(null);
   const [myloading, setLoading] = useState(true);
+  const [dateList, setDateList] = useState<string[]>([]);
+
+  useEffect(() => {
+    const dates: string[] = [];
+  const current = new Date(meta?.start_date);
+  const end = new Date(meta?.end_date)
+  while(current <= end) {
+    const isoDate = current.toISOString().split("T")[0];
+    dates.push(isoDate);
+    current.setUTCDate(current.getUTCDate() + 1);
+  }
+  setDateList(dates);
+  }, [meta]);
 
   // --- Fetch data once on mount ---
   useEffect(() => {
     const fetchAll = async () => {
+        const postData = {
+            days: dateList
+        };
+        const reqOptions = {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Accept': 'application/json'
+            },
+            body: JSON.stringify(postData)
+        };
       try {
-        const [ticketRes, witchRes] = await Promise.all([
+        const [ticketRes, witchRes, analysisRes] = await Promise.all([
           fetch("/api/Tickets"),
           fetch("/api/Information/couriers"),
+          fetch("http://localhost:8000/query_days", reqOptions)
         ]);
 
-        if (!ticketRes.ok || !witchRes.ok) {
+        if (!ticketRes.ok || !witchRes.ok || !analysisRes.ok) {
           throw new Error("Failed to fetch data");
         }
 
         const ticketData = (await ticketRes.json()) as TicketsPackage;
         const witchData = (await witchRes.json()) as WitchData[];
+        const analysisData = (await analysisRes.json()) as AnalysisData;
 
         setTicketInfo(ticketData);
         setWitchInfo(witchData);
+        setAnalysis(analysisData);
         setTicketDates(ticketData.transport_tickets.map(t => new Date(t.date)));
       } catch (err) {
         console.error("Error loading ticket data:", err);
@@ -65,9 +129,8 @@ export default function Tickets() {
         setLoading(false);
       }
     };
-
     fetchAll();
-  }, []);
+  }, [meta]);
 
   // --- Early return while loading ---
   if (myloading) {
@@ -84,11 +147,11 @@ export default function Tickets() {
     <div>
       {ticketInfo.transport_tickets.map((t, i) => {
         const date = ticketDates[i];
-        const isVisible = currentTime && date <= currentTime;
+        const isVisible = currentTime && date <= currentTime && analysis;
         return (
             <div>
                 {isVisible && (
-                    <p key={t.ticket_id}>
+                    <p key={t.ticket_id} style={{ color: analysis.results.find(d => d.flagged_tickets.find(q => q.ticket_id == t.ticket_id)) ? 'red' : 'black' }}>
             {witchInfo.find(s => s.courier_id == t.courier_id)?.name} delivered {t.amount_collected} liters from {cauldrons.find(c => c.id == t.cauldron_id)?.name} on {t.date}
           </p>
                 )}

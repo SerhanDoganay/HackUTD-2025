@@ -84,6 +84,12 @@ button:focus-visible {
   flex: 75;
 }
 
+.cpopup {
+  position: relative;
+  z-index: 2;
+  background-color: #aaaaaa;
+}
+
 div {
   width: 100%;
 }

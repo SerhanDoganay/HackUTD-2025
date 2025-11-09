@@ -1,5 +1,11 @@
 import pandas as pd
 import api_loader
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import JSONResponse
+from fastapi.encoders import jsonable_encoder
+import uvicorn
+from fastapi.middleware.cors import CORSMiddleware # or other middleware
+from pydantic import BaseModel
 
 def get_baseline_fill_rate(cauldron_data: pd.DataFrame) -> float:
     """
@@ -112,88 +118,66 @@ def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
 
     return flagged_tickets, unlogged_drains
 
+app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # or ["http://localhost:3000"] for more control
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# --- STEP 1: LOAD DATA ---
+cauldron_df = api_loader.fetch_cauldron_levels()
+tickets_df = api_loader.fetch_tickets()
+cauldron_df = add_analysis_columns(cauldron_df)
+
 # --- MAIN SCRIPT (This runs when you execute the file) ---
 if __name__ == "__main__":
-    
-    print("Starting batch analysis...")
-    
-    # --- STEP 1: LOAD DATA ---
-    cauldron_df = api_loader.fetch_cauldron_levels()
-    tickets_df = api_loader.fetch_tickets()
-    
-    # --- STEP 2: PREPARE DATA ---
-    cauldron_df = add_analysis_columns(cauldron_df)
-    
-    print("Data prepared. Analyzing specified days...")
+    uvicorn.run("analysis:app", host="127.0.0.1", port=8000, reload=True)
 
-    # --- STEP 3: DEFINE THE DATES YOU WANT TO TEST ---
-    #
-    # THIS IS THE PART YOU CHANGE
-    # Instead of finding unique dates, just define your list.
-    # Use 'YYYY-MM-DD' format.
-    #
-    dates_to_test = ["2025-10-30"]
-    
-    # This list will hold our final report
+class QDayData(BaseModel):
+    days: list[str]
+
+@app.post("/query_days")
+def query_day(in_days: QDayData):
+    dates_to_test = in_days.days
     all_results = []
 
-    # --- STEP 4: LOOP AND ANALYZE EACH DAY ---
     for target_date_str in dates_to_test:
-        
-        # Convert the string to a datetime.date object
         target_dt = pd.to_datetime(target_date_str).date()
         
-        # Filter data for the specific day
         df_today = cauldron_df[cauldron_df['timestamp'].dt.date == target_dt]
         tickets_today = tickets_df[tickets_df['date'].dt.date == target_dt]
 
-        # Check if there is data for this day
         if df_today.empty and tickets_today.empty:
-            print(f"No data found for {target_date_str}, skipping.")
+            all_results.append({
+                "date": target_date_str,
+                "message": "No data found for this date."
+            })
             continue
 
-        # --- A. "Daily Auditor" Check (Simple Total) ---
+        drain_events = get_drain_events(df_today)
+        tickets_today_list = tickets_today.to_dict('records')
+        flagged_tickets, unlogged_drains = reconcile_events_and_tickets(
+            drain_events, tickets_today_list
+        )
+
+        # Compute totals
         total_calculated_drain = df_today['actual_drain'].sum()
         total_ticketed_drain = tickets_today['amount_collected'].sum()
         total_discrepancy = total_calculated_drain - total_ticketed_drain
 
-        # --- B. "Detective" Check (Reconciliation) ---
-        drain_events = get_drain_events(df_today)
-        tickets_today_list = tickets_today.to_dict('records')
-        
-        flagged_tickets, unlogged_drains = reconcile_events_and_tickets(
-            drain_events, 
-            tickets_today_list
-        )
-        
-        # --- C. Store the results for this day ---
+        # Add to results
         day_summary = {
-            "date": target_dt,
-            "total_discrepancy_L": total_discrepancy,
+            "date": target_date_str,
+            "total_discrepancy_L": float(total_discrepancy),
             "flagged_tickets_count": len(flagged_tickets),
             "unlogged_drains_count": len(unlogged_drains),
-            "flagged_tickets": flagged_tickets,
-            "unlogged_drains": unlogged_drains
+            "drain_events": drain_events,           # includes start_time
+            "flagged_tickets": flagged_tickets,     # list of problematic tickets
+            "unlogged_drains": unlogged_drains      # list of un-ticketed drains
         }
         all_results.append(day_summary)
 
-    # --- STEP 5: REPORT THE FINDINGS ---
-    print("\n--- Analysis Complete ---")
-    
-    if not all_results:
-        print("No results to report for the specified dates.")
-    else:
-        results_df = pd.DataFrame(all_results)
-        discrepancy_tolerance = 1.0
-        
-        flagged_days_df = results_df[
-            (results_df['total_discrepancy_L'].abs() > discrepancy_tolerance) |
-            (results_df['flagged_tickets_count'] > 0) |
-            (results_df['unlogged_drains_count'] > 0)
-        ]
-
-        if flagged_days_df.empty:
-            print("\n All specified days reconciled! No discrepancies found.")
-        else:
-            print("\n DISCREPANCIES FOUND on the following days:")
-            print(flagged_days_df[['date', 'total_discrepancy_L', 'flagged_tickets_count', 'unlogged_drains_count']])
+    return JSONResponse(content=jsonable_encoder({"results": all_results}))
