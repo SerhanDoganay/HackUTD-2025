@@ -1,5 +1,3 @@
-# travel_times.py
-# Build all-pairs travel-time matrix (minutes) from the HackUTD 2025 API.
 
 import requests
 import pandas as pd
@@ -106,3 +104,4 @@ if __name__ == "__main__":
 
     # If you prefer undirected (bidirectional travel assumed), run:
     # travel_matrix_undirected, _, _ = compute_travel_times(directed=False)
+
