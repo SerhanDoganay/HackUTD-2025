@@ -4,128 +4,159 @@ import api_loader
 
 def get_baseline_fill_rate(cauldron_data: pd.DataFrame) -> float:
     """
-    Calculates the baseline fill rate for a single cauldron by finding
-    the mode (most common value) of all positive, minute-by-minute deltas.
+    Calculates the baseline fill rate by finding the 90th percentile
+    of all positive, minute-by-minute deltas.
     """
     delta = cauldron_data.sort_values(by='timestamp')['volume'].diff()
+    
+    # Filter for only positive deltas (when it's filling)
     positive_deltas = delta[delta > 0]
     
     if positive_deltas.empty:
         return 0
     
-    baseline_fill_rate = positive_deltas.mode()[0]
+    # Use quantile(0.9) to find the "true" undisturbed fill rate.
+    # This ignores the median, which might be polluted by slow drains.
+    baseline_fill_rate = positive_deltas.median()
     return baseline_fill_rate
 
 def add_analysis_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
-    Adds 'fill_rate' and 'actual_drain' columns to the main DataFrame.
+    Adds 'fill_rate' and 'observed_delta' columns.
     """
-    print("Calculating fill rates and drain...")
+    print("Adding analysis columns (fill_rate, observed_delta)...")
     
-    # 1. Get the fill rate for every cauldron
     fill_rate_map = {}
     for cauldron_id, data in df.groupby('cauldron_id'):
         fill_rate_map[cauldron_id] = get_baseline_fill_rate(data)
 
-    # 2. Add the new 'fill_rate' column by mapping the cauldron_id
     df['fill_rate'] = df['cauldron_id'].map(fill_rate_map)
     
-    # 3. Calculate 'observed_delta'
-    df['observed_delta'] = df.groupby('cauldron_id')['volume'].diff()
-
-    # 4. Calculate 'actual_drain'
-    df['actual_drain'] = (df['fill_rate'] - df['observed_delta']).fillna(0)
-    
-    # 5. Clean up the data (no negative drains)
-    # Define noise as 5% of the fill rate and SAVE IT as a column
-    df['noise_threshold'] = df['fill_rate'] * 0.05 
-    
-    df['actual_drain'] = np.where(
-        df['actual_drain'] > df['noise_threshold'],  # The condition
-        df['actual_drain'],                         # Value if True
-        0                                           # Value if False
-    )
+    # Calculate and store the raw, observed change
+    df['observed_delta'] = df.groupby('cauldron_id')['volume'].diff().fillna(0)
     
     print("Analysis columns added.")
     return df
 
 def get_drain_events(df_today: pd.DataFrame):
     """
-    Finds all individual drain events by grouping consecutive
-    minutes of draining.
+    Finds only the "fast drain" events for ticket matching.
     """
+    
+    # A "Fast Drain" is any minute the cauldron drops by more than 2.0L.
+    # This is a safe number, well above the 0.14 noise.
+    FAST_DRAIN_THRESHOLD = -0.25
+    
     df_today = df_today.sort_values(by=['cauldron_id', 'timestamp'])
     
-    # Create a 'group_id' that changes every time a new drain starts
-    # Only count drains that are NEGATIVE *and* greater than the noise threshold
-    FAST_DRAIN_THRESHOLD = 10.0 
-    is_draining = df_today['actual_drain'] > FAST_DRAIN_THRESHOLD
+    # 1. Find all minutes that are part of a "fast drain"
+    is_draining = df_today['observed_delta'] < FAST_DRAIN_THRESHOLD
+    
+    # 2. Create a 'group_id' for consecutive draining minutes
     new_event_group = (is_draining != is_draining.shift()).cumsum()
     
-    # Filter for only the draining minutes
+    # 3. Filter for only the draining minutes
     draining_data = df_today[is_draining]
     
-    # Group by cauldron AND the new event group, then sum the drains
-    events_df = draining_data.groupby(
-        ['cauldron_id', new_event_group]
-    ).agg(
-        start_time=('timestamp', 'first'),
-        total_drain=('actual_drain', 'sum')
-    ).reset_index()
+    # 4. Group by cauldron AND the new event group
+    events_df = draining_data.groupby(['cauldron_id', new_event_group])
     
-    # This gives you a clean list of events
-    # e.g., [{'cauldron_id': 'A', 'total_drain': 100.5}, ...]
-    return events_df.to_dict('records')
+    drain_events_list = []
+    
+    # 5. Loop through each event to calculate its true total drain
+    for (cauldron_id, group_id), event_data in events_df:
+        
+        # Calculate the total potion *lost* (e.g., -298.5)
+        total_delta_loss = event_data['observed_delta'].sum()
+        
+        # Calculate the total potion *gained* from filling
+        # during that time (e.g., 3 minutes * 1.5L/min = 4.5L)
+        total_fill_gain = event_data['fill_rate'].sum()
+        
+        # The true amount the witch took is the loss PLUS the gain
+        # e.g., total_drain = 4.5 - (-298.5) = 303.0L
+        total_drain = total_fill_gain - total_delta_loss
+        
+        # Your smallest ticket is 19.79L. We'll filter out
+        # any "fast" events that are still too small (i.e., noise spikes).
+        MINIMUM_TICKET_THRESHOLD = 15.0
+        
+        if total_drain > MINIMUM_TICKET_THRESHOLD:
+            drain_events_list.append({
+                'cauldron_id': cauldron_id,
+                'start_time': event_data['timestamp'].iloc[0],
+                'total_drain': total_drain
+            })
+
+    return drain_events_list
 
 def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
     """
-    Matches drain events to tickets and flags discrepancies.
-    This version loops through EVENTS first to be more robust.
+    Matches drain events to tickets using a "best-fit" algorithm.
+    This is more accurate than a simple "greedy" match.
     """
     
     flagged_tickets = []
     unlogged_drains = []
+    reconciled_pairs = []
     
-    # Make copies so we can remove items as we match them
     events_to_match = list(drain_events_list)
     tickets_to_match = list(tickets_today_list)
     
-    # Set a tolerance for matching (e.g., 2% = 0.02)
-    MATCH_TOLERANCE = 0.02 
+    # We can keep a 20% tolerance, but now we'll use it more intelligently
+    MATCH_TOLERANCE = 0.05
 
-    # --- THIS IS THE NEW LOGIC ---
-    # Loop through each DRAIN EVENT and try to find a ticket for it
+    # Loop through each DRAIN EVENT
     for event in events_to_match:
-        found_match = False
         
-        # Try to find a matching ticket
+        best_match_ticket = None
+        smallest_diff_percent = float('inf') # Start with infinity
+        ticket_index_to_remove = -1
+
+        # 1. FIND THE "BEST" MATCH
+        # Loop through all available tickets to find the single best partner
         for i, ticket in enumerate(tickets_to_match):
             
-            # Check for same cauldron
+            # Only compare tickets for the same cauldron
             if event['cauldron_id'] == ticket['cauldron_id']:
                 
-                # Check if amounts are within tolerance
-                required_drain = ticket['amount_collected']
-                actual_drain = event['total_drain']
+                # Calculate the percentage difference
+                # (Handle division by zero if ticket amount is 0)
+                if ticket['amount_collected'] > 0:
+                    diff_percent = abs(event['total_drain'] - ticket['amount_collected']) / ticket['amount_collected']
+                else:
+                    diff_percent = float('inf') # Can't match with a 0L ticket
                 
-                if abs(actual_drain - required_drain) <= (required_drain * MATCH_TOLERANCE):
-                    # It's a match!
-                    found_match = True
-                    
-                    # Remove the ticket so it can't be matched again
-                    tickets_to_match.pop(i)
-                    break # Stop searching for this event
+                # If this is the new "best" match, record it
+                if diff_percent < smallest_diff_percent:
+                    smallest_diff_percent = diff_percent
+                    best_match_ticket = ticket
+                    ticket_index_to_remove = i
+
+        # 2. VALIDATE THE "BEST" MATCH
+        # After checking all tickets, see if our best find is good enough
+        if best_match_ticket is not None and smallest_diff_percent <= MATCH_TOLERANCE:
+            # It is! This is a confirmed, "best-fit" pair.
+            reconciled_pairs.append({
+                "ticket": best_match_ticket,
+                "event": event
+            })
+            
+            # Remove the ticket from the pool so it can't be used again
+            # We pop in reverse index order to not mess up the list
+            # (Safety check by popping the specific index)
+            tickets_to_match.pop(ticket_index_to_remove)
         
-        if not found_match:
-            # We checked all tickets and none matched this event.
-            # This is an "unlogged drain".
+        else:
+            # This event had no good match (or no match at all).
+            # It is an "unlogged drain".
             unlogged_drains.append(event)
 
-    # After checking all events, any ticket left in 'tickets_to_match'
-    # is a "ghost" ticket (it had no matching event).
+    # 3. FINAL CLEANUP
+    # Any tickets left in the pool at the end are "ghost" tickets.
     flagged_tickets = tickets_to_match
 
-    return flagged_tickets, unlogged_drains
+    return flagged_tickets, unlogged_drains, reconciled_pairs
 
 # --- MAIN SCRIPT (This runs when you execute the file) ---
 if __name__ == "__main__":
@@ -135,6 +166,11 @@ if __name__ == "__main__":
     # --- STEP 1: LOAD DATA ---
     cauldron_df = api_loader.fetch_cauldron_levels()
     tickets_df = api_loader.fetch_tickets()
+
+    # --- ADD THIS DEBUG LINE ---
+    print("\n--- DEBUG: Ticket Amounts (Sorted) ---")
+    print(tickets_df['amount_collected'].sort_values().unique())
+    # --- END DEBUG ---
     
     # --- STEP 2: PREPARE DATA ---
     cauldron_df = add_analysis_columns(cauldron_df)
@@ -166,9 +202,44 @@ if __name__ == "__main__":
         if df_today.empty and tickets_today.empty:
             print(f"No data found for {target_date_str}, skipping.")
             continue
-
-        # --- A. "Daily Auditor" Check (Simple Total) ---
-        total_calculated_drain = df_today['actual_drain'].sum()
+        
+        # Get the total number of tickets by finding the length of the DataFrame
+        total_tickets_count = len(tickets_today)
+        
+        # You can now use this variable. Let's print it:
+        print(f"--- Found {total_tickets_count} tickets for {target_dt} ---")
+        
+        # --- A. "Daily Auditor" Check (New Robust Logic) ---
+        
+        # This logic is now separate and more accurate.
+        # It calculates: Total_Out = Total_Fill - Net_Change
+        
+        total_calculated_drain = 0
+        
+        # Loop through each cauldron's data for the day
+        for cauldron_id, data in df_today.groupby('cauldron_id'):
+            if data.empty:
+                continue
+                
+            # Get the single fill_rate for this cauldron (from Step 2)
+            fill_rate = data['fill_rate'].iloc[0]
+            
+            # 1. Calculate Total_Fill
+            # (e.g., 1.5L/min * 1440 minutes)
+            total_fill = fill_rate * len(data) # len(data) is num of minutes
+            
+            # 2. Calculate Net_Change
+            volume_start = data['volume'].iloc[0]
+            volume_end = data['volume'].iloc[-1]
+            net_change = volume_end - volume_start
+            
+            # 3. The formula: Total_Out = Total_Fill - Net_Change
+            cauldron_drain_total = total_fill - net_change
+            
+            # Add this cauldron's total drain to the day's total
+            total_calculated_drain += cauldron_drain_total
+            
+        # Now get the final discrepancy
         total_ticketed_drain = tickets_today['amount_collected'].sum()
         total_discrepancy = total_calculated_drain - total_ticketed_drain
 
@@ -176,7 +247,7 @@ if __name__ == "__main__":
         drain_events = get_drain_events(df_today)
         tickets_today_list = tickets_today.to_dict('records')
         
-        flagged_tickets, unlogged_drains = reconcile_events_and_tickets(
+        flagged_tickets, unlogged_drains, reconciled_pairs = reconcile_events_and_tickets(
             drain_events, 
             tickets_today_list
         )
@@ -188,7 +259,8 @@ if __name__ == "__main__":
             "flagged_tickets_count": len(flagged_tickets),
             "unlogged_drains_count": len(unlogged_drains),
             "flagged_tickets": flagged_tickets,
-            "unlogged_drains": unlogged_drains
+            "unlogged_drains": unlogged_drains,
+            "reconciled_pairs": reconciled_pairs
         }
         all_results.append(day_summary)
 
@@ -212,3 +284,35 @@ if __name__ == "__main__":
         else:
             print("\n DISCREPANCIES FOUND on the following days:")
             print(flagged_days_df[['date', 'total_discrepancy_L', 'flagged_tickets_count', 'unlogged_drains_count']])
+            # --- ADD THIS DEBUG BLOCK ---
+            print("\n--- SUCCESSFULLY MATCHED PAIRS (for first flagged day) ---")
+
+            # Get the full details for the first flagged day
+            first_bad_day = flagged_days_df.iloc[0] # (this variable name is fine)
+
+            # Get the list of pairs from the summary
+            pairs = first_bad_day.get('reconciled_pairs', [])
+
+            print(f"\nFound {len(pairs)} matched pairs for {first_bad_day['date']}:")
+            for pair in pairs:
+                ticket = pair['ticket']
+                event = pair['event']
+                # Calculate the difference
+                diff = event['total_drain'] - ticket['amount_collected']
+
+                print(f"  - MATCH: Ticket {ticket['ticket_id']} ({ticket['amount_collected']}L) <--> Event ({event['total_drain']:.2f}L) [Diff: {diff:+.2f}L]")
+            print("\n--- DETAILED FLAGGED ITEMS (for first flagged day) ---")
+            
+            # Get the full details for the first flagged day
+            first_bad_day = flagged_days_df.iloc[0]
+            
+            print(f"\nFlagged Tickets for {first_bad_day['date']}:")
+            # Loop and print each flagged ticket's details
+            for ticket in first_bad_day['flagged_tickets']:
+                print(f"  - Ticket {ticket['ticket_id']}: Cauldron {ticket['cauldron_id']}, Amount: {ticket['amount_collected']}L")
+
+            print(f"\nUnlogged Drains for {first_bad_day['date']}:")
+            # Loop and print each unlogged drain's details
+            for event in first_bad_day['unlogged_drains']:
+                print(f"  - Event: Cauldron {event['cauldron_id']}, Total Drain: {event['total_drain']:.2f}L, Start: {event['start_time']}")
+            # --- END DEBUG BLOCK ---
