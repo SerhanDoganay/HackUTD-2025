@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 import api_loader
 from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
@@ -42,7 +43,14 @@ def add_analysis_columns(df: pd.DataFrame) -> pd.DataFrame:
     df['actual_drain'] = (df['fill_rate'] - df['observed_delta']).fillna(0)
     
     # 5. Clean up the data (no negative drains)
-    df['actual_drain'] = df['actual_drain'].apply(lambda x: max(0, x))
+    # Define noise as 5% of the fill rate and SAVE IT as a column
+    df['noise_threshold'] = df['fill_rate'] * 0.05 
+    
+    df['actual_drain'] = np.where(
+        df['actual_drain'] > df['noise_threshold'],  # The condition
+        df['actual_drain'],                         # Value if True
+        0                                           # Value if False
+    )
     
     print("Analysis columns added.")
     return df
@@ -55,7 +63,9 @@ def get_drain_events(df_today: pd.DataFrame):
     df_today = df_today.sort_values(by=['cauldron_id', 'timestamp'])
     
     # Create a 'group_id' that changes every time a new drain starts
-    is_draining = df_today['actual_drain'] > 0
+    # Only count drains that are NEGATIVE *and* greater than the noise threshold
+    FAST_DRAIN_THRESHOLD = 10.0 
+    is_draining = df_today['actual_drain'] > FAST_DRAIN_THRESHOLD
     new_event_group = (is_draining != is_draining.shift()).cumsum()
     
     # Filter for only the draining minutes
@@ -74,6 +84,10 @@ def get_drain_events(df_today: pd.DataFrame):
     return events_df.to_dict('records')
 
 def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
+    """
+    Matches drain events to tickets and flags discrepancies.
+    This version loops through EVENTS first to be more robust.
+    """
     
     flagged_tickets = []
     unlogged_drains = []
@@ -83,14 +97,15 @@ def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
     tickets_to_match = list(tickets_today_list)
     
     # Set a tolerance for matching (e.g., 2% = 0.02)
-    # A 100L drain might be ticketed as 99.8L
     MATCH_TOLERANCE = 0.02 
 
-    for ticket in tickets_today_list:
+    # --- THIS IS THE NEW LOGIC ---
+    # Loop through each DRAIN EVENT and try to find a ticket for it
+    for event in events_to_match:
         found_match = False
         
-        # Try to find a matching drain event
-        for i, event in enumerate(events_to_match):
+        # Try to find a matching ticket
+        for i, ticket in enumerate(tickets_to_match):
             
             # Check for same cauldron
             if event['cauldron_id'] == ticket['cauldron_id']:
@@ -103,18 +118,18 @@ def reconcile_events_and_tickets(drain_events_list, tickets_today_list):
                     # It's a match!
                     found_match = True
                     
-                    # Remove the event so it can't be matched again
-                    events_to_match.pop(i)
-                    break # Stop searching for this ticket
+                    # Remove the ticket so it can't be matched again
+                    tickets_to_match.pop(i)
+                    break # Stop searching for this event
         
         if not found_match:
-            # We checked all drains and none matched this ticket.
-            # This is a "ghost" ticket or a fraudulent amount.
-            flagged_tickets.append(ticket)
+            # We checked all tickets and none matched this event.
+            # This is an "unlogged drain".
+            unlogged_drains.append(event)
 
-    # After checking all tickets, anything left in 'events_to_match'
-    # is a drain event that *never got a ticket*. This is theft.
-    unlogged_drains = events_to_match
+    # After checking all events, any ticket left in 'tickets_to_match'
+    # is a "ghost" ticket (it had no matching event).
+    flagged_tickets = tickets_to_match
 
     return flagged_tickets, unlogged_drains
 
