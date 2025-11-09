@@ -1,9 +1,11 @@
-import Message from './Message';
+import Cauldrons from './Cauldrons';
+import Timeline from './Timeline';
 
 function App() {
   return (
     <div>
-      <Message />
+      <Timeline />
+      <Cauldrons />
     </div>
   );
 }
