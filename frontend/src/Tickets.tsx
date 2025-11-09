@@ -152,6 +152,7 @@ export default function Tickets() {
   // --- Render ---
   return (
     <div>
+      <h3>Tickets: (Red Tickets are Inaccurate)</h3>
       {ticketInfo.transport_tickets.map((t, i) => {
         const date = ticketDates[i];
         const isVisible = currentTime && date <= currentTime && analysis;

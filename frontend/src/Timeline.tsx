@@ -17,18 +17,19 @@ export default function Timeline() {
   };
 
   const [isPaused, setPaused] = useState(false);
+  const [speed, setSpeed] = useState(1); // 1 = 1x, 2 = 2x
 
   useEffect(() => {
-    if (isPaused)
+    if (isPaused || currentMinute >= totalMinutes)
       return;
     setTimeout(() => {
-      setCurrentMinute(currentMinute + 1);
+      setCurrentMinute(currentMinute + speed);
     }, 1);
   });
 
   return (
     <div>
-      <h2 className="text-lg font-semibold mb-2">Timeline Slider</h2>
+      <h2 style={{ fontSize: '22px', marginLeft: '20px', marginTop: '20px', marginBottom: '5px', fontWeight: '600' }}>Timeline Slider</h2>
       <input
         type="range"
         min={0}
@@ -41,7 +42,10 @@ export default function Timeline() {
       <button onClick={() => setPaused(!isPaused)}>
         {isPaused ? "Play" : "Pause"}
       </button>
-      <p className="mt-2 font-mono">
+      <button onClick={() => setSpeed(speed === 1 ? 2 : 1)} style={{ marginLeft: '10px' }}>
+        {speed}x Speed
+      </button>
+      <p className="font-mono" style={{ marginTop: '-10px', marginLeft: '20px', marginBottom: 0 }}>
         {currentTime?.toLocaleString("en-US", { timeZone: "UTC" })}
       </p>
     </div>

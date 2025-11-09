@@ -17,9 +17,9 @@ function Cauldron({ id }) {
     const [visible, setVisible] = useState(false);
 
     const scale = 100000;
-    const xPad = 0;
+    const xPad = 150;
     const xOff = (myInfo?.longitude - LEFTMOST) * scale + xPad;
-    const yOff = (myInfo?.latitude - UPMOST) * scale;
+    const yOff = ((myInfo?.latitude - UPMOST) * scale) - 20;
 
     const positionInfo = {
         position: 'absolute',
@@ -47,10 +47,35 @@ function Cauldron({ id }) {
 
 function Cauldrons() {
     const { cauldrons, cauldronData, loading } = useCauldrons();
+    const { meta } = useTimeline();
     const numCauldrons = cauldrons.length;
     var i = 0;
+    
+    const formatDate = (dateString: string) => {
+        if (!dateString) return '';
+        const date = new Date(dateString);
+        return date.toLocaleDateString('en-US', { 
+            year: 'numeric', 
+            month: 'long', 
+            day: 'numeric' 
+        });
+    };
+    
     return (
         <div>
+            {meta && (
+                <h2 style={{ 
+                    position: 'fixed',
+                    top: '20px',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    margin: 0,
+                    zIndex: 1000,
+                    pointerEvents: 'none'
+                }}>
+                    Cauldron Levels from {formatDate(meta.start_date)} to {formatDate(meta.end_date)}
+                </h2>
+            )}
             {cauldrons.map(cauldron => (
                 <Cauldron key={cauldron.id} id={cauldron.id} />
             ))}
