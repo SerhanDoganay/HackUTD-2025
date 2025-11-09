@@ -16,8 +16,8 @@ function Cauldron({ id }) {
 
     const [visible, setVisible] = useState(false);
 
-    const scale = 200000;
-    const xPad = 200;
+    const scale = 100000;
+    const xPad = 0;
     const xOff = (myInfo?.longitude - LEFTMOST) * scale + xPad;
     const yOff = (myInfo?.latitude - UPMOST) * scale;
 
@@ -33,7 +33,7 @@ function Cauldron({ id }) {
             <img 
             onMouseEnter={() => setVisible(true)}
             onMouseLeave={() => setVisible(false)}
-            src={'/cauldron' + String(Math.ceil(percentFull * 100)).padStart(4, '0') + '.png'} width="60"></img>
+            src={'/cauldron' + String(Math.ceil(percentFull * 100)).padStart(4, '0') + '.png'} width="40"></img>
 
             {visible && (
                 <div className="absolute left-full top-1/2 ml-2 -translate-y-1/2 

@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useTimeline } from "./TimelineContext";
 
 export default function Timeline() {
@@ -16,16 +16,19 @@ export default function Timeline() {
     setCurrentMinute(parseInt(e.target.value, 10));
   };
 
+  const [isPaused, setPaused] = useState(false);
+
   useEffect(() => {
+    if (isPaused)
+      return;
     setTimeout(() => {
       setCurrentMinute(currentMinute + 1);
     }, 1);
   });
 
   return (
-    <div className="p-4 max-w-md mx-auto text-center">
+    <div>
       <h2 className="text-lg font-semibold mb-2">Timeline Slider</h2>
-
       <input
         type="range"
         min={0}
@@ -33,9 +36,11 @@ export default function Timeline() {
         step={1}
         value={currentMinute}
         onChange={handleChange}
-        className="w-full"
+        className="myslider"
       />
-
+      <button onClick={() => setPaused(!isPaused)}>
+        {isPaused ? "Play" : "Pause"}
+      </button>
       <p className="mt-2 font-mono">
         {currentTime?.toLocaleString("en-US", { timeZone: "UTC" })}
       </p>

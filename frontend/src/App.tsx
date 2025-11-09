@@ -10,10 +10,18 @@ function App() {
     <div>
       <TimelineProvider>
       <CauldronProvider>
+      <div className="topnav">
         <Timeline />
-        <Cauldrons />
-        <Market />
-        <Tickets />
+      </div>
+      <div className="container">
+        <div className="div1">
+          <Tickets />
+        </div>
+        <div className="div2">
+          <Cauldrons />
+          <Market />
+        </div>
+      </div>
       </CauldronProvider>
       </TimelineProvider>
     </div>

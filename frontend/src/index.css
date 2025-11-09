@@ -66,3 +66,24 @@ button:focus-visible {
     background-color: #f9f9f9;
   }
 }
+
+.myslider {
+  width: 1000px;
+}
+
+.container {
+  display: flex; /* Makes the container a flex container */
+}
+
+.div1 {
+  flex: 25;
+}
+
+.div2 {
+  position: relative;
+  flex: 75;
+}
+
+div {
+  width: 100%;
+}
