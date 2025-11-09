@@ -74,13 +74,13 @@ def fetch_cauldron_info() -> pd.DataFrame:
     return df
 
 # You can run this file by itself to test it
-if __name__ == "__main__":
-    df_levels = fetch_cauldron_levels()
-    print("\n--- Cauldron Levels (Head) ---")
-    print(df_levels.head())
-    print(df_levels.info())
+# if __name__ == "__main__":
+#     df_levels = fetch_cauldron_levels()
+#     print("\n--- Cauldron Levels (Head) ---")
+#     print(df_levels.head())
+#     print(df_levels.info())
     
-    df_tickets = fetch_tickets()
-    print("\n--- Tickets (Head) ---")
-    print(df_tickets.head())
-    print(df_tickets.info())
+#     df_tickets = fetch_tickets()
+#     print("\n--- Tickets (Head) ---")
+#     print(df_tickets.head())
+#     print(df_tickets.info())
