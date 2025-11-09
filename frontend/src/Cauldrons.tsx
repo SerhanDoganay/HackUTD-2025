@@ -29,7 +29,11 @@ function Cauldron({ id }) {
 
     return (
         <div style={positionInfo}>
-            <p>{myInfo?.name}</p>
+            <p style={{
+                color: 'white',
+                textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000',
+                fontWeight: 'bold'
+            }}>{myInfo?.name}</p>
             <img 
             onMouseEnter={() => setVisible(true)}
             onMouseLeave={() => setVisible(false)}

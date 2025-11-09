@@ -25,7 +25,11 @@ function Market() {
         <div>
             {!loading && (
             <div style={positionInfo}>
-            <p>{marketData.name}</p>
+            <p style={{
+                color: 'white',
+                textShadow: '-1px -1px 0 #000, 1px -1px 0 #000, -1px 1px 0 #000, 1px 1px 0 #000',
+                fontWeight: 'bold'
+            }}>{marketData.name}</p>
             <img src='/market.png' width="80"></img>
             </div>
             )}

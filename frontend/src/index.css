@@ -31,6 +31,10 @@ body {
   max-height: 100vh;
   overflow: hidden;
   background-color: #f0f4f8;
+  background-image: url('/image0.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 h1 {
@@ -126,4 +130,8 @@ div {
   overflow: hidden;
   box-sizing: border-box;
   background-color: #f0f4f8;
+  background-image: url('/image0.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
