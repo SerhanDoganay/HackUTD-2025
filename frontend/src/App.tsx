@@ -3,6 +3,7 @@ import { TimelineProvider } from "./TimelineContext";
 import Cauldrons from './Cauldrons';
 import Market from './Market';
 import Timeline from './Timeline';
+import Tickets from './Tickets';
 
 function App() {
   return (
@@ -12,6 +13,7 @@ function App() {
         <Timeline />
         <Cauldrons />
         <Market />
+        <Tickets />
       </CauldronProvider>
       </TimelineProvider>
     </div>

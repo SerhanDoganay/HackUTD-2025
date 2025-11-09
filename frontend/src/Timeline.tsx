@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { useTimeline } from "./TimelineContext";
 
 export default function Timeline() {
@@ -14,6 +15,12 @@ export default function Timeline() {
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setCurrentMinute(parseInt(e.target.value, 10));
   };
+
+  useEffect(() => {
+    setTimeout(() => {
+      setCurrentMinute(currentMinute + 1);
+    }, 1);
+  });
 
   return (
     <div className="p-4 max-w-md mx-auto text-center">

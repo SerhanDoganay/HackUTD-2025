@@ -5,13 +5,14 @@ function Market() {
     const { cauldrons, cauldronData, marketData, loading } = useCauldrons();
 
     const scale = 200000;
+    const xPad = 200;
     var xOff = -1;
     var yOff = -1;
     var positionInfo = {};
 
     if (!loading)
     {
-        xOff = (marketData.longitude - LEFTMOST) * scale;
+        xOff = (marketData.longitude - LEFTMOST) * scale + xPad;
         yOff = (marketData.latitude - UPMOST) * scale;
         positionInfo = {
             position: 'absolute',

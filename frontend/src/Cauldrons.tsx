@@ -17,7 +17,8 @@ function Cauldron({ id }) {
     const [visible, setVisible] = useState(false);
 
     const scale = 200000;
-    const xOff = (myInfo?.longitude - LEFTMOST) * scale;
+    const xPad = 200;
+    const xOff = (myInfo?.longitude - LEFTMOST) * scale + xPad;
     const yOff = (myInfo?.latitude - UPMOST) * scale;
 
     const positionInfo = {
@@ -51,7 +52,7 @@ function Cauldrons() {
     return (
         <div>
             {cauldrons.map(cauldron => (
-                <Cauldron id={cauldron.id} />
+                <Cauldron key={cauldron.id} id={cauldron.id} />
             ))}
         </div>
     );

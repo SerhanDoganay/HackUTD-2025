@@ -48,21 +48,20 @@ export const TimelineProvider = ({ children }: { children: ReactNode }) => {
   }, [start, end]);
 
   // Initialize currentMinute to "now"
-  useEffect(() => {
-    if (start && end) {
-      const now = Date.now();
-      const diffMinutes = Math.floor((now - start.getTime()) / 60000);
-      const clamped = Math.max(0, Math.min(diffMinutes, totalMinutes));
-      setCurrentMinute(clamped);
-    }
-  }, [start, end, totalMinutes]);
+  const [initialized, setInitialized] = useState(false);
 
-  const currentTime = useMemo(() => {
-    if (!start) return null;
-    const newTime = new Date(start);
-    newTime.setMinutes(start.getMinutes() + currentMinute);
-    return newTime;
-  }, [currentMinute, start]);
+useEffect(() => {
+  if (start && end && currentMinute === 0) {
+    const now = Date.now();
+    const diffMinutes = Math.floor((now - start.getTime()) / 60000);
+    const clamped = Math.max(0, Math.min(diffMinutes, totalMinutes));
+    setCurrentMinute(clamped);
+  }
+}, [start, end, totalMinutes]);
+
+  const currentTime = useMemo(() => (
+  start ? new Date(start.getTime() + currentMinute * 60000) : null
+), [currentMinute, start]);
 
   return (
     <TimelineContext.Provider
