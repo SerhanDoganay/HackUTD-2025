@@ -36,4 +36,3 @@ def get_tickets():
 
 
 
-print(df_tickets)
